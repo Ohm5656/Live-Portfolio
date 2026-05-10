@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Cloud, CloudOff, LineChart, Loader2, LogIn, LogOut } from 'lucide-react';
+import { Cloud, CloudOff, Loader2, LogIn, LogOut } from 'lucide-react';
 import { AuthBootstrap } from '@/components/auth/AuthBootstrap';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 import { InteractiveMarketBackdrop } from '@/components/InteractiveMarketBackdrop';
@@ -52,9 +53,14 @@ export function AppShell({ children }: AppShellProps) {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3"
           >
-            <div className="bg-gold/20 p-2 rounded-lg border border-gold/30">
-              <LineChart className="w-5 h-5 text-gold-light" />
-            </div>
+            <Image
+              src="/icons/live-portfolio-192.png"
+              alt=""
+              width={40}
+              height={40}
+              priority
+              className="h-10 w-10 rounded-lg border border-gold/30 object-cover shadow-[0_8px_24px_rgba(234,179,8,0.12)]"
+            />
             <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
               Live Portfolio
             </h1>
