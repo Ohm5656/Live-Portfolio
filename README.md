@@ -2,6 +2,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Supabase Setup
+
+Add these variables to `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Then open the Supabase SQL editor and run [supabase/schema.sql](supabase/schema.sql). The app uses email/password auth, keeps guest portfolios in `localStorage`, and switches to the `portfolios` table after login.
+
 First, run the development server:
 
 ```bash
