@@ -22,15 +22,13 @@ export function AppShell({ children }: AppShellProps) {
   const signOut = usePortfolioStore((state) => state.signOut);
 
   const isCloudSynced = Boolean(authUser && syncMode === 'supabase' && !syncError);
-  const syncLabel = !authUser
-    ? 'Guest'
-    : syncError
-      ? 'Sync issue'
-      : isSyncing
-        ? 'Syncing'
-        : syncMode === 'supabase'
-          ? 'Synced'
-          : 'Local only';
+  const syncLabel = syncError
+    ? 'Sync issue'
+    : isSyncing
+      ? 'Syncing'
+      : syncMode === 'supabase'
+        ? 'Synced'
+        : 'Local only';
 
   const handleSignOut = async () => {
     try {
@@ -44,7 +42,7 @@ export function AppShell({ children }: AppShellProps) {
     <div className="min-h-screen flex flex-col relative z-0">
       <InteractiveMarketBackdrop />
       <AuthBootstrap />
-      <AuthDialog open={isAuthOpen} onOpenChange={setIsAuthOpen} initialMode="signup" />
+      <AuthDialog open={isAuthOpen} onOpenChange={setIsAuthOpen} initialMode="signin" />
 
       {/* Navbar */}
       <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-navy-900/80 backdrop-blur-lg">
@@ -58,7 +56,7 @@ export function AppShell({ children }: AppShellProps) {
               <LineChart className="w-5 h-5 text-gold-light" />
             </div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-              Live Portfolio Estimator
+              Live Portfolio
             </h1>
           </motion.div>
 
@@ -67,23 +65,25 @@ export function AppShell({ children }: AppShellProps) {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-2"
           >
-            <div
-              className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 md:flex"
-              title={syncError || undefined}
-            >
-              {isSyncing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-gold-light" />
-              ) : isCloudSynced ? (
-                <Cloud className="h-3.5 w-3.5 text-profit-light" />
-              ) : (
-                <CloudOff className="h-3.5 w-3.5 text-slate-500" />
-              )}
-              <span className="max-w-40 truncate">
-                {authUser?.email || syncLabel}
-              </span>
-              <span className="text-slate-500">/</span>
-              <span className={syncError ? 'text-loss-light' : 'text-slate-400'}>{syncLabel}</span>
-            </div>
+            {authUser && (
+              <div
+                className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 md:flex"
+                title={syncError || undefined}
+              >
+                {isSyncing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-gold-light" />
+                ) : isCloudSynced ? (
+                  <Cloud className="h-3.5 w-3.5 text-profit-light" />
+                ) : (
+                  <CloudOff className="h-3.5 w-3.5 text-slate-500" />
+                )}
+                <span className="max-w-40 truncate">
+                  {authUser.email || 'Signed in'}
+                </span>
+                <span className="text-slate-500">/</span>
+                <span className={syncError ? 'text-loss-light' : 'text-slate-400'}>{syncLabel}</span>
+              </div>
+            )}
 
             {authUser ? (
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
@@ -114,14 +114,12 @@ export function AppShell({ children }: AppShellProps) {
       {/* Footer */}
       <footer className="border-t border-white/10 bg-navy-900/50 backdrop-blur-md mt-auto">
         <div className="container mx-auto px-4 py-6 text-center text-sm text-slate-500">
-          <p>
-            Portfolio values are estimated using live market prices and exchange rates. Actual broker values may differ.
-          </p>
+          
           <p className="mt-1">
             การประเมินมูลค่าพอร์ตลงทุนนี้ ใช้ราคาตลาดสดและอัตราแลกเปลี่ยนแบบ Real-time ซึ่งอาจมีความคลาดเคลื่อน
           </p>
           <p className="mt-1 text-xs opacity-70">
-            การแจ้งเตือนทำงานเฉพาะตอนเปิดหน้าเว็บอยู่
+            This live portfolio estimator uses real-time market prices and exchange rates, which may be subject to inaccuracies.
           </p>
         </div>
       </footer>

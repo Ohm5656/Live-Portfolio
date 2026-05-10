@@ -26,8 +26,8 @@ export function AuthDialog({ open, onOpenChange, initialMode = 'signup' }: AuthD
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="auth-title"
-            className="w-full max-w-md rounded-lg border border-white/10 bg-navy-800 p-6 shadow-2xl"
+            aria-label="Portfolio account"
+            className="w-full max-w-md rounded-lg border border-white/10 bg-navy-800/90 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.5)] backdrop-blur-xl"
             initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}

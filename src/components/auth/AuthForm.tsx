@@ -72,6 +72,7 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
   const signInWithEmail = usePortfolioStore((state) => state.signInWithEmail);
   const signUpWithEmail = usePortfolioStore((state) => state.signUpWithEmail);
   const passwordStrength = getPasswordStrength(password);
+  const isSignIn = mode === 'signin';
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
@@ -109,45 +110,13 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
 
   return (
     <>
-      <div className="mb-6">
-        <h2 id="auth-title" className="text-xl font-semibold text-slate-100">
-          {mode === 'signin' ? 'Sign in' : 'Create account'}
-        </h2>
-        <p className="mt-1 text-sm text-slate-400">
-          {mode === 'signin'
-            ? 'Sign in after creating your account to sync your portfolio.'
-            : 'Create your account first. If email confirmation is enabled, confirm your email before signing in.'}
-        </p>
-      </div>
-
-      <div className="mb-5 grid grid-cols-2 rounded-md border border-white/10 bg-navy-900/50 p-1">
-        <button
-          type="button"
-          className={`rounded px-3 py-2 text-sm transition-colors ${
-            mode === 'signup' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'
-          }`}
-          onClick={() => switchMode('signup')}
-        >
-          Sign up
-        </button>
-        <button
-          type="button"
-          className={`rounded px-3 py-2 text-sm transition-colors ${
-            mode === 'signin' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'
-          }`}
-          onClick={() => switchMode('signin')}
-        >
-          Sign in
-        </button>
-      </div>
-
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-5" onSubmit={handleSubmit}>
         <label className="block">
           <span className="mb-1.5 flex items-center gap-2 text-sm text-slate-300">
             <Mail className="h-4 w-4 text-slate-500" />
             Gmail
           </span>
-          <div className="flex rounded-md border border-white/10 bg-navy-800/50 transition-colors focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+          <div className="flex rounded-md border border-white/10 bg-navy-900/35 transition-colors focus-within:border-gold/45 focus-within:ring-1 focus-within:ring-gold/35">
             <input
               type="text"
               inputMode="email"
@@ -156,9 +125,9 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
               value={gmailUsername}
               onChange={(event) => setGmailUsername(getGmailUsername(event.target.value))}
               placeholder="yourname"
-              className="h-10 min-w-0 flex-1 rounded-l-md bg-transparent px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none"
+              className="h-11 min-w-0 flex-1 rounded-l-md bg-transparent px-4 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none"
             />
-            <div className="flex h-10 items-center rounded-r-md border-l border-white/10 bg-navy-900/60 px-3 text-sm text-slate-300">
+            <div className="flex h-11 items-center rounded-r-md border-l border-white/10 bg-navy-900/50 px-4 text-sm text-slate-300">
               {GMAIL_DOMAIN}
             </div>
           </div>
@@ -172,13 +141,13 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+              autoComplete={isSignIn ? 'current-password' : 'new-password'}
               minLength={6}
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 6 characters"
-              className="pr-11"
+              placeholder="6+ characters"
+              className="h-11 bg-navy-900/35 px-4 pr-11 focus-visible:border-gold/45 focus-visible:ring-gold/35"
             />
             <button
               type="button"
@@ -189,15 +158,17 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
-          <div className="mt-2">
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full transition-all ${passwordStrength.width} ${passwordStrength.color}`} />
+          {!isSignIn && password.length > 0 && (
+            <div className="mt-2">
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full rounded-full transition-all ${passwordStrength.width} ${passwordStrength.color}`} />
+              </div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="text-slate-500">Password strength</span>
+                <span className={passwordStrength.text}>{passwordStrength.label}</span>
+              </div>
             </div>
-            <div className="mt-1 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Password strength</span>
-              <span className={passwordStrength.text}>{passwordStrength.label}</span>
-            </div>
-          </div>
+          )}
         </label>
 
         {error && (
@@ -212,16 +183,33 @@ export function AuthForm({ initialMode = 'signup', onAuthenticated }: AuthFormPr
           </div>
         )}
 
-        <Button type="submit" variant="gold" className="w-full" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          variant="gold"
+          className="h-12 w-full border-gold/40 bg-gold/25 text-base font-semibold shadow-[0_12px_32px_rgba(234,179,8,0.08)] hover:bg-gold/35"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : mode === 'signin' ? (
+          ) : isSignIn ? (
             <LogIn className="mr-2 h-4 w-4" />
           ) : (
             <UserPlus className="mr-2 h-4 w-4" />
           )}
-          {mode === 'signin' ? 'Sign in' : 'Create account'}
+          {isSignIn ? 'Sign in' : 'Create my portfolio'}
         </Button>
+
+        {isSignIn && (
+          <div className="text-center text-sm">
+            <button
+              type="button"
+              className="font-medium text-slate-400 transition-colors hover:text-gold-light"
+              onClick={() => switchMode('signup')}
+            >
+              Create an account
+            </button>
+          </div>
+        )}
       </form>
     </>
   );
