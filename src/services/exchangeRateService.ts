@@ -39,7 +39,7 @@ export const exchangeRateService = {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const name = error instanceof Error ? error.name : '';
 
-      console.warn('Failed to fetch exchange rate, using fallback mode:', message);
+      console.warn('Failed to fetch exchange rate, keeping cached rate if available:', message);
       let reason = message;
       if (name === 'AbortError') {
         reason = 'Request timeout';
@@ -48,7 +48,7 @@ export const exchangeRateService = {
       }
 
       return {
-        rate: 36.00, // This is just the return structure, the store will decide if it uses cached or this fallback
+        rate: 0,
         status: 'fallback',
         lastUpdated: Date.now(),
         errorReason: reason,

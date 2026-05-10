@@ -15,8 +15,10 @@ export interface PortfolioItem {
   investedAmountTHB: number;
   buyPrice: number;
   priceCurrency: Currency;
-  exchangeRate: number; // The manual override rate if useGlobalExchangeRate is false
-  useGlobalExchangeRate: boolean; // True to sync with global live rate, False to use manual
+  buyExchangeRate: number; // USD/THB cost rate captured when the user enters the item
+  exchangeRateCapturedAt?: number;
+  exchangeRate?: number; // Legacy saved rate, kept for existing portfolios
+  useGlobalExchangeRate?: boolean; // Legacy current-rate preference, kept for existing portfolios
   alertSettings?: AlertSettings;
 }
 

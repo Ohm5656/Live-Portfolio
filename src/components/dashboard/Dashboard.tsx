@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { PortfolioCard } from './PortfolioCard';
-import { TradingViewChart } from '../chart/TradingViewChart';
 import { Card, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { mockPriceService } from '@/services/mockPriceService';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { calculatePortfolioItem } from '@/lib/portfolioMath';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, AlertTriangle, RefreshCcw, Activity } from 'lucide-react';
 import { exchangeRateService } from '@/services/exchangeRateService';
@@ -15,6 +16,18 @@ import { marketPriceService } from '@/services/marketPriceService';
 import { MarketPriceStatus } from '@/types/portfolio';
 
 const EXCHANGE_RATE_REFRESH_MS = 60 * 60 * 1000; // 1 hour
+
+const TradingViewChart = dynamic(
+  () => import('../chart/TradingViewChart').then((module) => module.TradingViewChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[400px] items-center justify-center rounded-xl border border-white/10 text-sm text-slate-400">
+        Loading chart...
+      </div>
+    ),
+  }
+);
 
 export function Dashboard() {
   const { items, removeItem, globalExchangeRate, updateGlobalExchangeRate, cachedPrices, updateCachedPrice, resetSetup } = usePortfolioStore();
@@ -27,28 +40,34 @@ export function Dashboard() {
   const fetchExchangeRate = React.useCallback(async () => {
     setIsRefreshingRate(true);
     const result = await exchangeRateService.getUsdToThbRate();
+    const hasStoredExchangeRate = globalExchangeRate.status !== 'fallback' && globalExchangeRate.rate > 0;
     
-    // If the new result is a fallback, but we already have a cached live/cached value, we switch to cached status instead of fallback.
-    if (result.status === 'fallback' && globalExchangeRate.rate !== 36.00) {
-      updateGlobalExchangeRate(globalExchangeRate.rate, 'cached', result.lastUpdated || Date.now(), result.errorReason);
+    if (result.status === 'fallback' && hasStoredExchangeRate) {
+      updateGlobalExchangeRate(
+        globalExchangeRate.rate,
+        'cached',
+        globalExchangeRate.lastUpdated || Date.now(),
+        result.errorReason
+      );
     } else {
       updateGlobalExchangeRate(result.rate, result.status, result.lastUpdated || Date.now(), result.errorReason);
     }
     setIsRefreshingRate(false);
-  }, [globalExchangeRate.rate, updateGlobalExchangeRate]);
+  }, [globalExchangeRate.lastUpdated, globalExchangeRate.rate, globalExchangeRate.status, updateGlobalExchangeRate]);
   
   const fetchMarketPrices = React.useCallback(async () => {
     const uniqueSymbols = Array.from(new Set(items.map(item => item.symbol.toUpperCase())));
     const newPrices: Record<string, { price: number; status: MarketPriceStatus }> = {};
+    const latestCachedPrices = usePortfolioStore.getState().cachedPrices;
 
-    for (const symbol of uniqueSymbols) {
+    await Promise.all(uniqueSymbols.map(async (symbol) => {
       try {
         const livePrice = await marketPriceService.getLivePrice(symbol);
         newPrices[symbol] = { price: livePrice, status: 'live' };
         updateCachedPrice(symbol, livePrice);
       } catch (error) {
         console.warn(`Failed to fetch live price for ${symbol}:`, error);
-        const cachedPrice = cachedPrices[symbol];
+        const cachedPrice = latestCachedPrices[symbol];
         // Fallback to cache
         if (cachedPrice) {
           newPrices[symbol] = { price: cachedPrice.price, status: 'cached' };
@@ -57,15 +76,31 @@ export function Dashboard() {
           newPrices[symbol] = { price: mockPriceService.getCurrentPrice(symbol), status: 'mock' };
         }
       }
-    }
+    }));
     
     setActivePrices(prev => ({ ...prev, ...newPrices }));
-  }, [items, cachedPrices, updateCachedPrice]);
+  }, [items, updateCachedPrice]);
 
   useEffect(() => {
     const initialFetch = window.setTimeout(() => {
       if (globalExchangeRate.status === 'fallback' || !globalExchangeRate.lastUpdated || (Date.now() - globalExchangeRate.lastUpdated > EXCHANGE_RATE_REFRESH_MS)) {
         void fetchExchangeRate();
+      }
+    }, 0);
+
+    const rateInterval = setInterval(fetchExchangeRate, EXCHANGE_RATE_REFRESH_MS); // Poll exchange rate every hour
+    
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(rateInterval);
+    };
+  }, [fetchExchangeRate, globalExchangeRate.lastUpdated, globalExchangeRate.status]);
+
+  useEffect(() => {
+    const initialFetch = window.setTimeout(() => {
+      if (items.length === 0) {
+        setActivePrices({});
+        return;
       }
 
       void fetchMarketPrices();
@@ -75,15 +110,11 @@ export function Dashboard() {
       void fetchMarketPrices();
     }, 2 * 60 * 1000); // Poll prices every 2 mins
     
-    const rateInterval = setInterval(fetchExchangeRate, EXCHANGE_RATE_REFRESH_MS); // Poll exchange rate every hour
-    
     return () => {
       clearTimeout(initialFetch);
       clearInterval(interval);
-      clearInterval(rateInterval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only on mount and manage polling from here
+  }, [fetchMarketPrices, items.length]);
 
   const resolvedPrices = useMemo(() => {
     const prices = { ...activePrices };
@@ -127,16 +158,8 @@ export function Dashboard() {
       
       totalInvestedTHB += item.investedAmountTHB;
       
-      let currentValueTHB = 0;
-      if (item.priceCurrency === 'USD') {
-        const activeRate = item.useGlobalExchangeRate ? globalExchangeRate.rate : item.exchangeRate;
-        const units = (item.investedAmountTHB / activeRate) / item.buyPrice;
-        currentValueTHB = units * currentPrice * activeRate;
-      } else {
-        const units = item.investedAmountTHB / item.buyPrice;
-        currentValueTHB = units * currentPrice;
-      }
-      totalCurrentValueTHB += currentValueTHB;
+      const calculation = calculatePortfolioItem(item, currentPrice, globalExchangeRate.rate);
+      totalCurrentValueTHB += calculation.currentValueTHB;
     });
 
     const totalProfitLossTHB = totalCurrentValueTHB - totalInvestedTHB;
@@ -151,6 +174,7 @@ export function Dashboard() {
     const isLive = globalExchangeRate.status === 'live';
     const isCached = globalExchangeRate.status === 'cached';
     const isFallback = globalExchangeRate.status === 'fallback';
+    const hasExchangeRate = globalExchangeRate.rate > 0;
     
     return (
       <Card className="mb-6 border-white/5 bg-navy-800/40">
@@ -170,7 +194,13 @@ export function Dashboard() {
                 </span>
               </div>
               <p className="text-2xl font-mono font-bold mt-0.5">
-                {formatNumber(globalExchangeRate.rate, 4)} <span className="text-sm text-slate-400">฿/$</span>
+                {hasExchangeRate ? (
+                  <>
+                    {formatNumber(globalExchangeRate.rate, 4)} <span className="text-sm text-slate-400">฿/$</span>
+                  </>
+                ) : (
+                  <span className="text-base font-medium text-slate-400">ยังไม่มีเรทที่บันทึกไว้</span>
+                )}
               </p>
             </div>
           </div>
@@ -193,7 +223,7 @@ export function Dashboard() {
               <span className="text-yellow-400/80 text-xs">⚠️ ไม่สามารถดึงค่าเงินล่าสุดได้ กำลังใช้ค่าเงินล่าสุดที่บันทึกไว้ ({globalExchangeRate.errorReason})</span>
             )}
             {isFallback && (
-              <span className="text-yellow-400/80 text-xs">⚠️ ไม่สามารถดึงค่าเงินล่าสุดได้ ระบบกำลังใช้ค่าเริ่มต้น ({globalExchangeRate.errorReason})</span>
+              <span className="text-yellow-400/80 text-xs">⚠️ ไม่สามารถดึงค่าเงินล่าสุดได้ และยังไม่มีเรทเดิมให้ใช้ ({globalExchangeRate.errorReason})</span>
             )}
           </div>
         </CardContent>

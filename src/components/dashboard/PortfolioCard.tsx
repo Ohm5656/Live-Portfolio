@@ -9,6 +9,7 @@ import { LineChart, Settings, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { MarketPriceStatus } from '@/types/portfolio';
+import { calculatePortfolioItem } from '@/lib/portfolioMath';
 
 interface PortfolioCardProps {
   item: PortfolioItem;
@@ -21,39 +22,35 @@ interface PortfolioCardProps {
 export function PortfolioCard({ item, activePrice, priceStatus, onOpenChart, onRemove }: PortfolioCardProps) {
   const { globalExchangeRate } = usePortfolioStore();
 
-  const activeExchangeRate = item.useGlobalExchangeRate ? globalExchangeRate.rate : item.exchangeRate;
+  const calculations = useMemo(
+    () => calculatePortfolioItem(item, activePrice, globalExchangeRate.rate),
+    [item, activePrice, globalExchangeRate.rate]
+  );
 
-  const calculations = useMemo(() => {
-    let units = 0;
-    let currentValueTHB = 0;
-    
-    if (item.priceCurrency === 'USD') {
-      const investedUSD = item.investedAmountTHB / activeExchangeRate;
-      units = investedUSD / item.buyPrice;
-      const currentUSD = units * activePrice;
-      currentValueTHB = currentUSD * activeExchangeRate;
-    } else {
-      units = item.investedAmountTHB / item.buyPrice;
-      currentValueTHB = units * activePrice;
-    }
-
-    const profitLossTHB = currentValueTHB - item.investedAmountTHB;
-    const profitLossPercent = (profitLossTHB / item.investedAmountTHB) * 100;
-    const isProfit = profitLossTHB >= 0;
-
-    return { units, currentValueTHB, profitLossTHB, profitLossPercent, isProfit };
-  }, [item, activePrice, activeExchangeRate]);
-
-  const { units, currentValueTHB, profitLossTHB, profitLossPercent, isProfit } = calculations;
+  const {
+    units,
+    currentValueTHB,
+    profitLossTHB,
+    profitLossPercent,
+    isProfit,
+    buyExchangeRate,
+    currentExchangeRate,
+    currentExchangeRateSource,
+  } = calculations;
 
   const renderExchangeRateIndicator = () => {
     if (item.priceCurrency !== 'USD') return null;
-    
-    if (!item.useGlobalExchangeRate) {
-      return <Badge variant="outline" className="text-[10px] h-5 opacity-70">Manual Rate: {activeExchangeRate}</Badge>;
-    }
 
     const { status } = globalExchangeRate;
+    const label =
+      status === 'live'
+        ? 'Live'
+        : status === 'cached'
+          ? 'Cached'
+          : currentExchangeRateSource === 'cost'
+            ? 'Saved cost rate'
+            : 'No rate';
+
     return (
       <Badge 
         variant="outline" 
@@ -63,7 +60,7 @@ export function PortfolioCard({ item, activePrice, priceStatus, onOpenChart, onR
         )}
       >
         <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", status === 'live' ? 'bg-profit' : 'bg-yellow-500')} />
-        USD/THB • {status === 'live' ? 'Live' : status === 'cached' ? 'Cached' : 'Fallback'}
+        USD/THB • {label}
       </Badge>
     );
   };
@@ -118,7 +115,7 @@ export function PortfolioCard({ item, activePrice, priceStatus, onOpenChart, onR
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm text-slate-400 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-sm text-slate-400 mb-5">
           <div className="flex justify-between">
             <span>ราคาที่เข้าซื้อ:</span>
             <span className="font-mono text-slate-200">{formatNumber(item.buyPrice)} {item.priceCurrency}</span>
@@ -132,10 +129,18 @@ export function PortfolioCard({ item, activePrice, priceStatus, onOpenChart, onR
             <span className="font-mono text-slate-200">{formatCurrency(item.investedAmountTHB)}</span>
           </div>
           {item.priceCurrency === 'USD' && (
-            <div className="flex justify-between">
-              <span>เรทที่ใช้คำนวณ:</span>
-              <span className="font-mono text-slate-200">{formatNumber(activeExchangeRate)} ฿/$</span>
-            </div>
+            <>
+              <div className="flex justify-between">
+                <span>เรทต้นทุน:</span>
+                <span className="font-mono text-slate-200">{formatNumber(buyExchangeRate)} ฿/$</span>
+              </div>
+              <div className="flex justify-between">
+                <span>{currentExchangeRateSource === 'cost' ? 'เรทที่ใช้ประเมิน:' : 'เรทปัจจุบัน:'}</span>
+                <span className="font-mono text-slate-200">
+                  {currentExchangeRate > 0 ? `${formatNumber(currentExchangeRate)} ฿/$` : '-'}
+                </span>
+              </div>
+            </>
           )}
         </div>
 

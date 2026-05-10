@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { Asset, PortfolioItem } from '@/types/portfolio';
 import { mockPriceService } from '@/services/mockPriceService';
 import { marketPriceService } from '@/services/marketPriceService';
+import { exchangeRateService } from '@/services/exchangeRateService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -22,6 +23,11 @@ export function OnboardingFlow() {
 
   const store = usePortfolioStore();
   const isAddingMore = store.items.length > 0;
+  const { globalExchangeRate, updateGlobalExchangeRate } = store;
+  const capturedExchangeRate =
+    globalExchangeRate.status !== 'fallback' && globalExchangeRate.rate > 0
+      ? globalExchangeRate.rate
+      : undefined;
 
   // Search logic
   const searchResults = searchQuery 
@@ -42,7 +48,8 @@ export function OnboardingFlow() {
           investedAmountTHB: 0,
           buyPrice: 0,
           priceCurrency: asset.type === 'crypto' || asset.type === 'etf' || asset.type === 'stock' ? 'USD' : 'THB',
-          exchangeRate: store.globalExchangeRate.rate || 36.00,
+          buyExchangeRate: capturedExchangeRate,
+          exchangeRate: capturedExchangeRate,
           useGlobalExchangeRate: true,
         }
       }));
@@ -65,29 +72,98 @@ export function OnboardingFlow() {
     }));
   };
 
+  useEffect(() => {
+    let isCancelled = false;
+    const rateAge = globalExchangeRate.lastUpdated
+      ? Date.now() - globalExchangeRate.lastUpdated
+      : Number.POSITIVE_INFINITY;
+
+    const hasFreshRate =
+      globalExchangeRate.status !== 'fallback' &&
+      globalExchangeRate.lastUpdated &&
+      rateAge < 60 * 60 * 1000;
+    const hasRecentFallback =
+      globalExchangeRate.status === 'fallback' &&
+      globalExchangeRate.lastUpdated &&
+      rateAge < 5 * 60 * 1000;
+
+    if (hasFreshRate || hasRecentFallback) {
+      return undefined;
+    }
+
+    const fetchInitialExchangeRate = async () => {
+      const result = await exchangeRateService.getUsdToThbRate();
+
+      if (isCancelled) {
+        return;
+      }
+
+      if (result.status === 'fallback' && globalExchangeRate.status !== 'fallback' && globalExchangeRate.rate > 0) {
+        updateGlobalExchangeRate(
+          globalExchangeRate.rate,
+          'cached',
+          result.lastUpdated || Date.now(),
+          result.errorReason
+        );
+        return;
+      }
+
+      updateGlobalExchangeRate(
+        result.rate,
+        result.status,
+        result.lastUpdated || Date.now(),
+        result.errorReason
+      );
+    };
+
+    void fetchInitialExchangeRate();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [globalExchangeRate.lastUpdated, globalExchangeRate.rate, globalExchangeRate.status, updateGlobalExchangeRate]);
+
   const handleComplete = async () => {
     setIsChecking(true);
     setErrorMsg('');
 
     try {
-      // Pre-check all selected assets
-      for (const asset of selectedAssets) {
-        await marketPriceService.getLivePrice(asset.symbol);
+      const missingExchangeRate = selectedAssets.find(asset => {
+        const data = investmentData[asset.symbol];
+        const priceCurrency = data?.priceCurrency || 'USD';
+        const formExchangeRate = Number(data?.buyExchangeRate || data?.exchangeRate || capturedExchangeRate);
+
+        return priceCurrency === 'USD' && (!formExchangeRate || formExchangeRate <= 0);
+      });
+
+      if (missingExchangeRate) {
+        setErrorMsg(`กรุณากรอกเรท USD/THB สำหรับ ${missingExchangeRate.symbol} ก่อนบันทึก`);
+        return;
       }
+
+      // Pre-check all selected assets
+      await Promise.all(selectedAssets.map((asset) => marketPriceService.getLivePrice(asset.symbol)));
 
       // Validate and save
       selectedAssets.forEach(asset => {
       const data = investmentData[asset.symbol];
       if (data) {
+        const priceCurrency = data.priceCurrency as 'USD' | 'THB' || 'USD';
+        const buyExchangeRate = priceCurrency === 'USD'
+          ? Number(data.buyExchangeRate || data.exchangeRate || capturedExchangeRate)
+          : 1;
+
         store.addItem({
           id: crypto.randomUUID(),
           symbol: asset.symbol,
           name: asset.name,
           investedAmountTHB: Number(data.investedAmountTHB) || 0,
           buyPrice: Number(data.buyPrice) || 0,
-          priceCurrency: data.priceCurrency as 'USD' | 'THB' || 'USD',
-          exchangeRate: Number(data.exchangeRate) || store.globalExchangeRate.rate || 36.00,
-          useGlobalExchangeRate: data.useGlobalExchangeRate ?? true,
+          priceCurrency,
+          buyExchangeRate,
+          exchangeRate: priceCurrency === 'USD' ? buyExchangeRate : undefined,
+          exchangeRateCapturedAt: Date.now(),
+          useGlobalExchangeRate: true,
         });
       }
     });
@@ -100,12 +176,12 @@ export function OnboardingFlow() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-12">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-gold-light to-gold bg-clip-text text-transparent">
+    <div className="mx-auto w-full max-w-3xl min-w-0 py-8 md:py-12">
+      <div className="mb-8 text-center md:mb-10">
+        <h1 className="mb-4 bg-gradient-to-r from-gold-light to-gold bg-clip-text text-3xl font-bold text-transparent md:text-4xl">
           {isAddingMore ? 'เพิ่มสินทรัพย์' : 'ยินดีต้อนรับสู่ Live Portfolio'}
         </h1>
-        <p className="text-slate-400 text-lg">
+        <p className="text-base text-slate-400 md:text-lg">
           {step === 1 
             ? (isAddingMore ? 'ค้นหาและเลือกสินทรัพย์ที่คุณต้องการเพิ่มเข้าพอร์ต' : 'เริ่มต้นด้วยการเลือกสินทรัพย์ที่คุณมีอยู่') 
             : 'ระบุต้นทุนการลงทุนของคุณ'}
@@ -118,7 +194,8 @@ export function OnboardingFlow() {
             key="step1"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="w-full min-w-0"
           >
             <Card>
               <CardHeader>
@@ -197,10 +274,10 @@ export function OnboardingFlow() {
         ) : (
           <motion.div
             key="step2"
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-4"
+            exit={{ opacity: 0, y: -12 }}
+            className="w-full min-w-0 space-y-4"
           >
             {errorMsg && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-lg text-sm mb-4">
@@ -210,15 +287,15 @@ export function OnboardingFlow() {
             {selectedAssets.map((asset) => {
               const data = investmentData[asset.symbol];
               return (
-                <Card key={asset.symbol}>
+                <Card key={asset.symbol} className="w-full min-w-0">
                   <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="text-gold">{asset.symbol}</span>
                       <span className="text-slate-400 text-sm font-normal">{asset.name}</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
                       <div>
                         <label className="block text-sm text-slate-400 mb-1">เงินลงทุน (บาท)</label>
                         <Input 
@@ -240,8 +317,8 @@ export function OnboardingFlow() {
                           onChange={(e) => handleInvestmentChange(asset.symbol, 'buyPrice', e.target.value)}
                         />
                       </div>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
+                      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 md:flex md:gap-2">
+                        <div className="min-w-0 md:flex-1">
                           <label className="block text-sm text-slate-400 mb-1">สกุลเงินราคา</label>
                           <select 
                             className="flex h-10 w-full rounded-md border border-white/10 bg-navy-800/50 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
@@ -253,34 +330,21 @@ export function OnboardingFlow() {
                           </select>
                         </div>
                         {data?.priceCurrency === 'USD' && (
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="block text-sm text-slate-400">อัตราแลกเปลี่ยน</label>
-                              <div className="flex items-center gap-1.5">
-                                <input 
-                                  type="checkbox" 
-                                  id={`use-global-${asset.symbol}`}
-                                  checked={data?.useGlobalExchangeRate !== false}
-                                  onChange={(e) => {
-                                    handleInvestmentChange(asset.symbol, 'useGlobalExchangeRate', e.target.checked);
-                                    if (e.target.checked) {
-                                      handleInvestmentChange(asset.symbol, 'exchangeRate', store.globalExchangeRate.rate);
-                                    }
-                                  }}
-                                  className="rounded border-white/10 bg-navy-800 text-gold focus:ring-gold"
-                                />
-                                <label htmlFor={`use-global-${asset.symbol}`} className="text-xs text-slate-500 cursor-pointer">Live (Auto)</label>
-                              </div>
-                            </div>
+                          <div className="min-w-0 md:flex-1">
+                            <label className="mb-1 block text-sm text-slate-400">เรทวันที่เพิ่มพอร์ต</label>
                             <Input 
                               type="number" 
                               step="0.01"
-                              placeholder="36.00"
-                              value={data?.useGlobalExchangeRate !== false ? store.globalExchangeRate.rate : (data?.exchangeRate || '')}
-                              disabled={data?.useGlobalExchangeRate !== false}
-                              onChange={(e) => handleInvestmentChange(asset.symbol, 'exchangeRate', e.target.value)}
-                              className={data?.useGlobalExchangeRate !== false ? "opacity-60 bg-navy-900" : ""}
+                              min="0"
+                              placeholder={capturedExchangeRate ? capturedExchangeRate.toFixed(2) : 'กรอก USD/THB'}
+                              value={data?.buyExchangeRate || data?.exchangeRate || capturedExchangeRate || ''}
+                              onChange={(e) => handleInvestmentChange(asset.symbol, 'buyExchangeRate', e.target.value)}
                             />
+                            <p className="mt-1 text-xs text-slate-500">
+                              {capturedExchangeRate
+                                ? 'ระบบล็อกเรทนี้ไว้เป็นต้นทุน FX แก้ได้ถ้ามีเรทจริง'
+                                : 'ดึงเรทไม่ได้ กรุณากรอกเองเพื่อคำนวณต้นทุน'}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -290,11 +354,11 @@ export function OnboardingFlow() {
               );
             })}
 
-            <div className="flex justify-between mt-8">
-              <Button variant="ghost" onClick={() => setStep(1)}>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setStep(1)}>
                 ย้อนกลับ
               </Button>
-              <Button size="lg" variant="gold" onClick={handleComplete} disabled={isChecking}>
+              <Button size="lg" variant="gold" className="w-full sm:w-auto" onClick={handleComplete} disabled={isChecking}>
                 {isChecking ? (
                   <span className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />

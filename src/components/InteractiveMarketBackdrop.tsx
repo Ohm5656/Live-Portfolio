@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface PointerState {
   x: number;
@@ -43,7 +43,7 @@ function createSparkles(count: number): Sparkle[] {
 
 export function InteractiveMarketBackdrop() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sparkles = useMemo(() => createSparkles(110), []);
+  const sparklesRef = useRef<Sparkle[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,6 +57,12 @@ export function InteractiveMarketBackdrop() {
     }
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isTouchScreen = window.matchMedia('(pointer: coarse)').matches;
+    const sparkleCount = reducedMotion ? 28 : isTouchScreen ? 46 : 90;
+    const sparkles = sparklesRef.current.length === sparkleCount
+      ? sparklesRef.current
+      : createSparkles(sparkleCount);
+    sparklesRef.current = sparkles;
     const pointer: PointerState = {
       x: window.innerWidth * 0.5,
       y: window.innerHeight * 0.42,
@@ -71,7 +77,7 @@ export function InteractiveMarketBackdrop() {
     let lastFrame = 0;
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, isTouchScreen ? 1.25 : 1.75);
       width = window.innerWidth;
       height = window.innerHeight;
       canvas.width = Math.floor(width * dpr);
@@ -136,8 +142,10 @@ export function InteractiveMarketBackdrop() {
       context.fill();
     };
 
+    const frameInterval = reducedMotion ? 160 : isTouchScreen ? 66 : 40;
+
     const render = (time: number) => {
-      if (time - lastFrame < 33) {
+      if (time - lastFrame < frameInterval) {
         animationId = requestAnimationFrame(render);
         return;
       }
@@ -148,24 +156,30 @@ export function InteractiveMarketBackdrop() {
 
       context.clearRect(0, 0, width, height);
       drawPointerGlow();
-      sparkles.forEach((sparkle) => drawSparkle(sparkle, time));
+      for (const sparkle of sparkles) {
+        drawSparkle(sparkle, time);
+      }
 
       animationId = requestAnimationFrame(render);
     };
 
     resize();
-    window.addEventListener('resize', resize);
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerleave', handlePointerLeave);
+    window.addEventListener('resize', resize, { passive: true });
+    if (!isTouchScreen && !reducedMotion) {
+      window.addEventListener('pointermove', handlePointerMove, { passive: true });
+      window.addEventListener('pointerleave', handlePointerLeave, { passive: true });
+    }
     animationId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resize);
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerleave', handlePointerLeave);
+      if (!isTouchScreen && !reducedMotion) {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerleave', handlePointerLeave);
+      }
     };
-  }, [sparkles]);
+  }, []);
 
   return (
     <canvas
